@@ -15,6 +15,9 @@ COPY src /usr/app/sap-app
 WORKDIR /usr/app/sap-app
 
 # RUN mvn --version
-RUN mvn clean compile assembly:single
+# RUN mvn clean compile assembly:single
+# RUN cp target/sap-app-1.0-SNAPSHOT-jar-with-dependencies.jar /usr/app/sap-app
 
-ENTRYPOINT java -cp sapjco3.jar:target/sap-app-1.0-SNAPSHOT-jar-with-dependencies.jar com.veza.app.App
+COPY target/sap-app-1.0-SNAPSHOT-jar-with-dependencies.jar /usr/app/sap-app
+
+ENTRYPOINT java -cp sapjco3.jar:sap-app-1.0-SNAPSHOT-jar-with-dependencies.jar com.veza.app.App
