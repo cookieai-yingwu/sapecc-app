@@ -1,0 +1,3 @@
+curl -X POST 'https://127.0.0.1:9443/sync_user' \
+  -d '{"server":{"isTestingServer": true, "host":"hcmsbxas01.sap.digitalriver.com", "systemNumber":"00", "client":"300", "jcoUser":"DRVEZATEST", "jcoPassword":"Veza123!"}, "username": "TESTYING6", "password":"Veza123!", "firstname": "YingW", "lastname": "UserSix", "department": "dept1", "email": "emmail1@aa.com", "function":"func1", "licenseType": "91", "deactivatePassword": true, "parameters": {"/BA1/F4_EXCH":"test", "/SPE/IF_QUEUE_LOG":"S"}}' \
+  --insecure

@@ -13,6 +13,9 @@ COPY src /usr/app/sap-app/src
 
 WORKDIR /usr/app/sap-app
 
+# If we run mvn clean compile assembly:single locally, we can create container by just copy over jar
+# COPY target/sap-app-1.0-SNAPSHOT-jar-with-dependencies.jar /usr/app/sap-app
+
 RUN mvn clean compile assembly:single
 RUN cp target/sap-app-1.0-SNAPSHOT-jar-with-dependencies.jar /usr/app/sap-app
 

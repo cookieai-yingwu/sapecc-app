@@ -32,17 +32,30 @@ type SapEccLockUserRequest struct {
 }
 
 type SapEccCreateUserRequest struct {
-	Server    SapEccServer `json:"server"`
-	Username  string       `json:"username"`
-	Password  string       `json:"password"`
-	Firstname string       `json:"firstname"`
-	Lastname  string       `json:"lastname"`
+	Server             SapEccServer      `json:"server"`
+	Username           string            `json:"username"`
+	Password           string            `json:"password"`
+	Firstname          string            `json:"firstname"`
+	Lastname           string            `json:"lastname"`
+	LicenseType        string            `json:"licenseType"`
+	Department         string            `json:"department"`
+	Function           string            `json:"function"`
+	Email              string            `json:"email"`
+	DeactivatePassword bool              `json:"deactivatePassword,omitempty"`
+	Parameters         map[string]string `json:"parameters,omitempty"`
+}
+
+// This is the Role of SAP.
+type SapActivityGroup struct {
+	Group    string `json:"group"`
+	FromDate string `json:"fromDate"` // veza server only support MM/dd/yyyy format
+	ToDate   string `json:"toDate"`
 }
 
 type SapEccAssignUserGroupRequest struct {
-	Server     SapEccServer `json:"server"`
-	Username   string       `json:"username"`
-	UserGroups []string     `json:"userGroups"`
+	Server     SapEccServer       `json:"server"`
+	Username   string             `json:"username"`
+	UserGroups []SapActivityGroup `json:"userGroups"`
 }
 
 type Client struct {
@@ -75,9 +88,11 @@ func NewClient(httpClient *http.Client, hostname, clientID, systemNumber, userna
 func main() {
 
 	ctx := context.Background()
+	url := "https://127.0.0.1"
+	port := 9443
 	client := NewClient(nil, "hcmsbxas01.sap.digitalriver.com", "300", "00", "DRVEZATEST", "Veza123!")
 	fmt.Println("Now check if the server is up")
-	version, err := client.GetVersion(ctx)
+	version, err := client.GetVersion(ctx, url, port)
 	if err != nil {
 		fmt.Println("Unable to connect with SAP Webserver")
 		return
@@ -85,7 +100,7 @@ func main() {
 	fmt.Println("The version is " + version + " \n")
 
 	fmt.Println("Now ping the server")
-	err = client.Ping(ctx)
+	err = client.Ping(ctx, url, port)
 	if err != nil {
 		fmt.Println("Unable to Ping SAP Webserver")
 		return
@@ -96,10 +111,12 @@ func main() {
 	password := "Veza123!"
 	firstname := "FirstnameSix"
 	lastname := "John"
-	groups := []string{"/IPRO/MANAGER"}
+	licenseType := "91"
+	parameters := map[string]string{"/BA1/F4_EXCH": "Test", "/SPE/IF_QUEUE_LOG": "S"}
+	groups := []SapActivityGroup{{Group: "/IPRO/MANAGER"}}
 
 	fmt.Println("Now create user " + username)
-	err = client.CreateUser(ctx, username, password, firstname, lastname)
+	err = client.CreateUser(ctx, url, port, username, password, firstname, lastname, licenseType, parameters)
 	if err != nil {
 		fmt.Println("Unable to Create User " + username)
 		return
@@ -107,7 +124,7 @@ func main() {
 	fmt.Println("Create user is OK")
 
 	fmt.Println("Now assign group for user " + username)
-	err = client.AssignUserGroups(ctx, username, groups)
+	err = client.AssignUserGroups(ctx, url, port, username, groups)
 	if err != nil {
 		fmt.Println("Unable to Assign user group " + username)
 		return
@@ -115,7 +132,7 @@ func main() {
 	fmt.Println("Assign user group is OK")
 
 	fmt.Println("Now lock a user " + username)
-	err = client.Lock(ctx, username)
+	err = client.Lock(ctx, url, port, username)
 	if err != nil {
 		fmt.Println("Unable to Lock User " + username)
 		return
@@ -123,8 +140,8 @@ func main() {
 	fmt.Println("Lock user is OK")
 }
 
-func (c *Client) GetVersion(ctx context.Context) (string, error) {
-	url := "https://127.0.0.1:9443/about"
+func (c *Client) GetVersion(ctx context.Context, vezaServerUrl string, port int) (string, error) {
+	url := fmt.Sprintf("%s:%d/about", vezaServerUrl, port)
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		fmt.Println("Unable to create a request for /about. err: " + err.Error())
@@ -135,6 +152,7 @@ func (c *Client) GetVersion(ctx context.Context) (string, error) {
 		fmt.Println("Unable to get response for /about. err: " + err.Error())
 		return "", err
 	}
+	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		return "", errors.New(fmt.Sprintf("Invalid status code %d", resp.StatusCode))
 	}
@@ -155,12 +173,12 @@ func (c *Client) getSapServer() SapEccServer {
 		JcoPassword:  c.password,
 
 		// IsTesting?
-		IsTestingServer: true,
+		IsTestingServer: false,
 	}
 }
 
-func (c *Client) Ping(ctx context.Context) error {
-	url := "https://127.0.0.1:9443/ping"
+func (c *Client) Ping(ctx context.Context, vezaServerUrl string, port int) error {
+	url := fmt.Sprintf("%s:%d/ping", vezaServerUrl, port)
 	sapServer := c.getSapServer()
 	body, err := json.Marshal(sapServer)
 	if err != nil {
@@ -176,14 +194,16 @@ func (c *Client) Ping(ctx context.Context) error {
 		fmt.Println("Unable to get response for /ping. err: " + err.Error())
 		return err
 	}
+	defer resp.Body.Close()
+	fmt.Printf("The statusCode is %d\n", resp.StatusCode)
 	if resp.StatusCode != http.StatusOK {
 		return errors.New(fmt.Sprintf("Invalid status code %d", resp.StatusCode))
 	}
 	return nil
 }
 
-func (c *Client) Lock(ctx context.Context, username string) error {
-	url := "https://127.0.0.1:9443/lock"
+func (c *Client) Lock(ctx context.Context, vezaServerUrl string, port int, username string) error {
+	url := fmt.Sprintf("%s:%d/lock", vezaServerUrl, port)
 	sapServer := c.getSapServer()
 	request := SapEccLockUserRequest{
 		Server:   sapServer,
@@ -204,21 +224,25 @@ func (c *Client) Lock(ctx context.Context, username string) error {
 		fmt.Println("Unable to get response for /lock. err: " + err.Error())
 		return err
 	}
+	defer resp.Body.Close()
+	fmt.Printf("The statusCode is %d\n", resp.StatusCode)
 	if resp.StatusCode != http.StatusOK {
 		return errors.New(fmt.Sprintf("Invalid status code %d", resp.StatusCode))
 	}
 	return nil
 }
 
-func (c *Client) CreateUser(ctx context.Context, username, password, firstname, lastname string) error {
-	url := "https://127.0.0.1:9443/create_user"
+func (c *Client) CreateUser(ctx context.Context, vezaServerUrl string, port int, username, password, firstname, lastname, licenseType string, parameters map[string]string) error {
+	url := fmt.Sprintf("%s:%d/create_user", vezaServerUrl, port)
 	sapServer := c.getSapServer()
 	request := SapEccCreateUserRequest{
-		Server:    sapServer,
-		Username:  username,
-		Password:  password,
-		Firstname: firstname,
-		Lastname:  lastname,
+		Server:      sapServer,
+		Username:    username,
+		Password:    password,
+		Firstname:   firstname,
+		Lastname:    lastname,
+		LicenseType: licenseType,
+		Parameters:  parameters,
 	}
 	body, err := json.Marshal(request)
 	if err != nil {
@@ -235,14 +259,16 @@ func (c *Client) CreateUser(ctx context.Context, username, password, firstname, 
 		fmt.Println("Unable to get response for /create_user. err: " + err.Error())
 		return err
 	}
+	defer resp.Body.Close()
+	fmt.Printf("The statusCode is %d\n", resp.StatusCode)
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		return errors.New(fmt.Sprintf("Invalid status code %d", resp.StatusCode))
 	}
 	return nil
 }
 
-func (c *Client) AssignUserGroups(ctx context.Context, username string, groups []string) error {
-	url := "https://127.0.0.1:9443/assign_groups"
+func (c *Client) AssignUserGroups(ctx context.Context, vezaServerUrl string, port int, username string, groups []SapActivityGroup) error {
+	url := fmt.Sprintf("%s:%d/assign_groups", vezaServerUrl, port)
 	sapServer := c.getSapServer()
 	request := SapEccAssignUserGroupRequest{
 		Server:     sapServer,
@@ -264,6 +290,8 @@ func (c *Client) AssignUserGroups(ctx context.Context, username string, groups [
 		fmt.Println("Unable to get response for /assign_groups.")
 		return err
 	}
+	defer resp.Body.Close()
+	fmt.Printf("The statusCode is %d\n", resp.StatusCode)
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		return errors.New(fmt.Sprintf("Invalid status code %d", resp.StatusCode))
 	}
