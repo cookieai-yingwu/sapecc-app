@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 	"time"
 )
 
@@ -30,6 +29,7 @@ type SapEccServer struct {
 type SapEccLockUserRequest struct {
 	Server   SapEccServer `json:"server"`
 	Username string       `json:"username"`
+	ValidTo  string       `json:"validTo,omitempty"`
 }
 
 type SapEccGetUserDetailRequest struct {
@@ -138,7 +138,7 @@ func main() {
 	}
 	fmt.Println("Server is OK")
 
-	//username := "TESTYING6"
+	username := "TESTYING6"
 	/*password := "Veza123!"
 	firstname := "FirstnameSix"
 	lastname := "John"
@@ -160,23 +160,23 @@ func main() {
 		fmt.Println("Unable to Assign user group " + username)
 		return
 	}
-	fmt.Println("Assign user group is OK")
+	fmt.Println("Assign user group is OK") */
 
-	fmt.Println("Now lock a user " + username)
-	err = client.Lock(ctx, url, port, username)
+	fmt.Println("Now lock a user " + username + " with date 01/01/2025")
+	err = client.Lock(ctx, url, port, username, "01/01/2025")
 	if err != nil {
 		fmt.Println("Unable to Lock User " + username)
 		return
 	}
-	fmt.Println("Lock user is OK")*/
+	fmt.Println("Lock user is OK")
 
-	userList, err := client.GetUserSummaryList(ctx, url, port)
+	/*userList, err := client.GetUserSummaryList(ctx, url, port)
 	if err != nil {
 		fmt.Println("Unable to list User err: " + err.Error())
 		return
 	}
 	// fmt.Printf("the list is %+v\n", userList)
-	fmt.Printf("the user list count is %d\n", len(userList))
+	fmt.Printf("the user list count is %d\n", len(userList))*/
 	/*for i, user := range userList {
 		resp, err := client.GetUserDetail(ctx, url, port, user.Username)
 		if err != nil {
@@ -188,7 +188,7 @@ func main() {
 		}
 	}*/
 
-	roleList, err := client.GetRoleSummaryList(ctx, url, port)
+	/*roleList, err := client.GetRoleSummaryList(ctx, url, port)
 	if err != nil {
 		fmt.Println("Unable to list User err: " + err.Error())
 		return
@@ -198,7 +198,7 @@ func main() {
 			fmt.Printf("index: %d, Role: %s\n", i, role.Name)
 		}
 	}
-	fmt.Printf("the role list count is %d\n", len(roleList))
+	fmt.Printf("the role list count is %d\n", len(roleList))*/
 
 	/*userDetail, err := client.GetUserDetail(ctx, url, port, username)
 	if err != nil {
@@ -270,12 +270,13 @@ func (c *Client) Ping(ctx context.Context, vezaServerUrl string, port int) error
 	return nil
 }
 
-func (c *Client) Lock(ctx context.Context, vezaServerUrl string, port int, username string) error {
+func (c *Client) Lock(ctx context.Context, vezaServerUrl string, port int, username string, validTo string) error {
 	url := fmt.Sprintf("%s:%d/lock", vezaServerUrl, port)
 	sapServer := c.getSapServer()
 	request := SapEccLockUserRequest{
 		Server:   sapServer,
 		Username: username,
+		ValidTo:  validTo,
 	}
 	body, err := json.Marshal(request)
 	if err != nil {

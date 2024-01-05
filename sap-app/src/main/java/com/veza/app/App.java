@@ -34,7 +34,7 @@ import com.sap.conn.jco.JCoTable;
 
 public class App 
 {
-    public static final String version = "Dec 2023 Build v1.4";
+    public static final String version = "Jan 2024 Build v1.5.1";
     private static Logger LOGGER = LoggerFactory.getLogger(App.class);
     static List<String> logBuffer = Collections.synchronizedList(new ArrayList<String>());
 
@@ -255,7 +255,7 @@ public class App
                     ctx.status(400);
                     return;
                 }
-                LoggingInfo(getCurrentTimeString() +": Create User " + sapUser);
+                LoggingInfo(getCurrentTimeString() +": Modify User " + sapUser);
                 if (sapUser.server.isTestingServer) {
                     SapResult result = new SapResult();
                     if (sapUser.deactivatePassword != null && !sapUser.deactivatePassword && notEmptyString(sapUser.password)) {
@@ -320,9 +320,9 @@ public class App
                 }
                 synchronized(memoryProvider) {
                     memoryProvider.changeProperties(sapUser.server.host, getDestinationPropertiesFromStruct(sapUser.server));
-                    SapUserDetail userDetail = getUserDetail(sapUser.server.host, sapUser.username);
+                    Boolean useExisted = confirmUserExist(sapUser.server.host, sapUser.username);
                     SapResult sapResult;
-                    if (userDetail != null) {
+                    if (useExisted) {
                         LoggingInfo("User "+ sapUser.username +" is existed, modify user");
                         sapResult = modifyUser(sapUser.server.host, sapUser.username, sapUser.password, sapUser.firstname, sapUser.lastname,
                             sapUser.department, sapUser.function, sapUser.email, sapUser.licenseType, sapUser.validFrom, sapUser.validTo,
@@ -418,7 +418,7 @@ public class App
                 synchronized(memoryProvider) {
                     memoryProvider.changeProperties(request.server.host, getDestinationPropertiesFromStruct(request.server));
                     // First remove all activity groups from current user
-                    String message = removeParameterAndLicenseTypeAndGroups(request.server.host, request.username);
+                    String message = removeParameterAndLicenseTypeAndGroups(request.server.host, request.username, request.validTo);
                     if (!"".equals(message)) {
                         LoggingError("Lock Failed, Unable to remove all roles from a user");
                         ctx.result("Failed with message :" + message);
@@ -427,12 +427,12 @@ public class App
                     }
                     message = lockUser(request.server.host, request.username);
                     if ("".equals(message)) {
-                        LoggingInfo("Lock user OK");
+                        LoggingInfo("Lock User OK");
 		                ctx.result("{}");
                         ctx.status(200);
                         return;
                     } else {
-                        LoggingError("Lock Failed: " + message);
+                        LoggingError("Lock User Failed: " + message);
                         ctx.result("Failed with message :" + message);
                         ctx.status(500);
                         return;
@@ -462,12 +462,20 @@ public class App
                 }
                 LoggingInfo(getCurrentTimeString() +": Get User Detail " + request);
                 if (request.server.isTestingServer) {
-                    ctx.result("{}");
+                    SapUserDetail userDetail = getFakedUserDetail(request.server.host, request.username);
+                    ctx.result(userDetail.toString());
                     ctx.status(200);
                     return;
                 }
                 synchronized(memoryProvider) {
                     memoryProvider.changeProperties(request.server.host, getDestinationPropertiesFromStruct(request.server));
+                    Boolean userExisted = confirmUserExist(request.server.host, request.username);
+                    if (!userExisted) {
+                        LoggingError("Get User Detail Failed");
+                        ctx.result("User "+ request.username +" doesn't existed, Failed");
+                        ctx.status(500);
+                        return;
+                    }
                     SapUserDetail userDetail = getUserDetail(request.server.host, request.username);
                     if (userDetail != null) {
                         LoggingInfo("Get user detail OK");
@@ -513,10 +521,11 @@ public class App
                 synchronized(memoryProvider) {
                     memoryProvider.changeProperties(sapServer.host, getDestinationPropertiesFromStruct(sapServer));
                     List<SapUserSummary> userList = getUserList(sapServer.host);
+                    LoggingInfo("List User OK, User count: " + userList.size());
                     ctx.result(mapper.writeValueAsString(userList));
                 }
             }  catch (Exception exception) {
-                LoggingError("Failed to list users:" + exception.toString());
+                LoggingError("List User Failed:" + exception.toString());
                 ctx.status(500);
                 ctx.result(exception.getMessage());
                 throw new Error(exception);
@@ -547,10 +556,11 @@ public class App
                 synchronized(memoryProvider) {
                     memoryProvider.changeProperties(sapServer.host, getDestinationPropertiesFromStruct(sapServer));
                     List<SapRoleSummary> roleList = getRoleList(sapServer.host);
+                    LoggingInfo("List Role OK, Role count: " + roleList.size());
                     ctx.result(mapper.writeValueAsString(roleList));
                 }
             }  catch (Exception exception) {
-                LoggingError("Failed to list users:" + exception.toString());
+                LoggingError("List Role Failed:" + exception.toString());
                 ctx.status(500);
                 ctx.result(exception.getMessage());
                 throw new Error(exception);
@@ -609,11 +619,34 @@ public class App
         sapRole.name = "SAP_FAKE_USER";
         return Arrays.asList(new SapRoleSummary[]{sapRole});
     }
-    
+
     private static List<SapUserSummary> getFakedUserList(String destName) {
         SapUserSummary sapUser = new SapUserSummary();
         sapUser.username = "FAKEUSER1";
         return Arrays.asList(new SapUserSummary[]{sapUser});
+    }
+
+    private static SapUserDetail getFakedUserDetail(String destName, String username) {
+        SapUserDetail detail = new SapUserDetail();
+        detail.username = username;
+        if (username.equals("FAKEUSER1")) {
+            detail.firstname = "Fake";
+            detail.lastname = "User1";
+            detail.licenseType = "91";
+            detail.department = "dept1";
+            detail.email = "fakeuser@sap.com";
+            detail.function = "func1";
+            detail.validFrom = "12/31/2023";
+            detail.validTo = "11/25/2024";
+            detail.parameters = new HashMap<String, String>();
+            detail.parameters.put("/BA1/F4_EXCH", "test");
+            UserGroup[] userGroups = new UserGroup[1];
+            userGroups[0] = new UserGroup();
+            userGroups[0].group = "SAP_FAKE_USER";
+            detail.userGroups = userGroups;
+            return detail;
+        }
+        return detail;
     }
 
     private static List<SapUserSummary> getUserList(String destName) throws Exception{
@@ -767,7 +800,7 @@ public class App
         }
     }
 
-    private static String removeParameterAndLicenseTypeAndGroups(String destName, String username) {
+    private static String removeParameterAndLicenseTypeAndGroups(String destName, String username, String validTo) {
         try {
             // Remove all groups from user
             LoggingInfo("Remove all roles from user " + username);
@@ -799,6 +832,23 @@ public class App
             JCoStructure parameterX = function2.getImportParameterList().getStructure("PARAMETERX");
             parameterX.setValue("PARID", 'X');
             parameterX.setValue("PARVA", 'X');
+
+            if (notNull(validTo)) {
+                JCoStructure logonData = function2.getImportParameterList().getStructure("LOGONDATA");
+                JCoStructure logonDataX = function2.getImportParameterList().getStructure("LOGONDATAX");
+                if (notEmptyString(validTo)) {
+                    Date validToDate = getDateFromString(validTo);
+                    if (validToDate != null) {
+                        logonData.setValue("GLTGB", validToDate);
+                        logonDataX.setValue("GLTGB", 'X');
+                    } else {
+                        LoggingError("Invalid format of valid to string: " + validTo);
+                    }
+                } else {
+                    logonData.setValue("GLTGB", "");
+                    logonDataX.setValue("GLTGB", 'X');
+                }
+            }
             function2.execute(destination);
             return processFunctionReturn(function2);
         } catch (Exception e) {
@@ -825,7 +875,7 @@ public class App
             if (function==null)
                 throw new RuntimeException("BAPI_USER_CHANGE not found in SAP.");
             function.getImportParameterList().setValue("USERNAME", username);
-            if (notEmptyString(licenseType)) {
+            if (notNull(licenseType)) {
                 JCoStructure uClass = function.getImportParameterList().getStructure("UCLASS");
                 uClass.setValue("LIC_TYPE", licenseType);
                 // Add the change indicator for uclass
@@ -833,7 +883,7 @@ public class App
                 uClassX.setValue("UCLASS", 'X');
                 // uClassX.setValue("UCLASSSYS", 'R');
             }
-            if (parametersMap != null && parametersMap.size() > 0) {
+            if (parametersMap != null) {
                 JCoTable parameters=function.getTableParameterList().getTable("PARAMETER");
                 for (String key : parametersMap.keySet()) {
                     parameters.appendRow();
@@ -846,7 +896,7 @@ public class App
                 parameterX.setValue("PARID", 'X');
                 parameterX.setValue("PARVA", 'X');
             }
-            if (deactivatePassword != null || notEmptyString(validFrom) || notEmptyString(validTo)) {
+            if (deactivatePassword != null || notNull(validFrom) || notNull(validTo)) {
                 JCoStructure logonData = function.getImportParameterList().getStructure("LOGONDATA");
                 JCoStructure logonDataX = function.getImportParameterList().getStructure("LOGONDATAX");
                 if (deactivatePassword != null && deactivatePassword) {
@@ -867,46 +917,56 @@ public class App
                     JCoStructure passwordDataX = function.getImportParameterList().getStructure("PASSWORDX");
                     passwordDataX.setValue("BAPIPWD", 'X');
                 }
-                if (notEmptyString(validFrom)) {
-                    Date validFromDate = getDateFromString(validFrom);
-                    if (validFromDate != null) {
-                        logonData.setValue("GLTGV", validFromDate);
-                        logonDataX.setValue("GLTGV", 'X');
+                if (notNull(validFrom)) {
+                    if (notEmptyString(validFrom)) {
+                        Date validFromDate = getDateFromString(validFrom);
+                        if (validFromDate != null) {
+                            logonData.setValue("GLTGV", validFromDate);
+                            logonDataX.setValue("GLTGV", 'X');
+                        } else {
+                            LoggingError("Invalid format of valid from string: " + validFrom);
+                        }
                     } else {
-                        LoggingError("Invalid format of valid from string: " + validFrom);
+                        logonDataX.setValue("GLTGV", 'X');
+                        logonData.setValue("GLTGV", "");
                     }
                 }
-                if (notEmptyString(validTo)) {
-                    Date validToDate = getDateFromString(validTo);
-                    if (validToDate != null) {
-                        logonData.setValue("GLTGB", validToDate);
-                        logonDataX.setValue("GLTGB", 'X');
+                if (notNull(validTo)) {
+                    if (notEmptyString(validTo)) {
+                        Date validToDate = getDateFromString(validTo);
+                        if (validToDate != null) {
+                            logonData.setValue("GLTGB", validToDate);
+                            logonDataX.setValue("GLTGB", 'X');
+                        } else {
+                            LoggingError("Invalid format of valid to string: " + validTo);
+                        }
                     } else {
-                        LoggingError("Invalid format of valid to string: " + validTo);
+                        logonData.setValue("GLTGB", "");
+                        logonDataX.setValue("GLTGB", 'X');
                     }
                 }
             }
 
-            if (notEmptyString(firstname) || notEmptyString(lastname) || notEmptyString(functionStr) || notEmptyString(department) || notEmptyString(email)) {
+            if (notNull(firstname) || notNull(lastname) || notNull(functionStr) || notNull(department) || notNull(email)) {
                 JCoStructure address = function.getImportParameterList().getStructure("ADDRESS");
                 JCoStructure addressX = function.getImportParameterList().getStructure("ADDRESSX");
-                if (notEmptyString(firstname)) {
+                if (notNull(firstname)) {
                     address.setValue("FIRSTNAME", firstname);
                     addressX.setValue("FIRSTNAME", 'X');
                 }
-                if (notEmptyString(lastname)) {
+                if (notNull(lastname)) {
                     address.setValue("LASTNAME", firstname);
                     addressX.setValue("LASTNAME", 'X');
                 }
-                if (notEmptyString(functionStr)) {
+                if (notNull(functionStr)) {
                     address.setValue("FUNCTION", functionStr);
                     addressX.setValue("FUNCTION", 'X');
                 }
-                if (notEmptyString(department)) {
+                if (notNull(department)) {
                     address.setValue("DEPARTMENT", department);
                     addressX.setValue("DEPARTMENT", 'X');
                 }
-                if (notEmptyString(email)) {
+                if (notNull(email)) {
                     address.setValue("E_MAIL", email);
                     addressX.setValue("E_MAIL", 'X');
                 }
@@ -1089,9 +1149,10 @@ public class App
     public static class SapLockUserRequest {
         public SapServer server;
         public String username;
+        public String validTo;
         @Override
         public String toString() {
-            return "{server="+server.toString()+", username="+username+"}";
+            return "{server="+server.toString()+", username="+username+", validTo="+validTo+"}";
         }
     }
 
@@ -1217,15 +1278,15 @@ public class App
 
     public static Date getDateFromString(final String dateString) {
         String[] formatList = new String[]{
-            "yyyy-MM-dd",
-            "yyyy/MM/dd",
             "MM/dd/yyyy",
             "MM-dd-yyyy",
+            "yyyy/MM/dd",
+            "yyyy-MM-dd",
             "yyyy-MM-dd'T'HH:mm:ss'Z'",
             "yyyy-MM-dd'T'HH:mm:ssZ",
             "yyyy-MM-dd'T'HH:mm:ss",
             "yyyy-MM-dd HH:mm:ss",
-            "yyyy-MM-dd HH:mm:ssZ"
+            "yyyy-MM-dd'T'HH:mm:ssZ"
         };
         for (int i=0;i<formatList.length;i++) {
             Date date = getDateFormStringAndFormat(dateString, formatList[i]);
@@ -1250,6 +1311,10 @@ public class App
         } catch (Exception e) {
             return null;
         }
+    }
+
+    public static boolean notNull(final String s) {
+        return s != null;
     }
 
     public static boolean notEmptyString( final String s ) {
